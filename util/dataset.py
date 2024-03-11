@@ -192,12 +192,12 @@ class TxtLabelDataset(Dataset):
     def __init__(self, data_dir, size, split = 'train', transform = None, classnum = None, ratio_train = None, ratio_val = None):
         super().__init__()
         self.size = size
-        if ratio_train or ratio_val is None:
+        if ratio_train is None or ratio_val is None:
             self.data_dir = data_dir + f"{split}\\"
             data_csv = split
             split = ''
         else:
-            self.data_dir = data_dir
+            self.data_dir = data_dir + f"{split}\\"
             data_csv = split
         self.transform = transform
         self.name2label = {}
@@ -221,6 +221,7 @@ class TxtLabelDataset(Dataset):
         else:
             self.img_files = self.img_files[:]
             self.label_files = self.label_files[:]
+        print(f"self.img_files: {len(self.img_files)}")
         self.Image = [np.array(Image.open(img_file).convert('RGB').resize(
             (self.size[1], self.size[0]), Image.BILINEAR)) for img_file in self.img_files]
 
