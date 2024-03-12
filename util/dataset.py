@@ -221,7 +221,6 @@ class TxtLabelDataset(Dataset):
         else:
             self.img_files = self.img_files[:]
             self.label_files = self.label_files[:]
-        print(f"self.img_files: {len(self.img_files)}")
         self.Image = [np.array(Image.open(img_file).convert('RGB').resize(
             (self.size[1], self.size[0]), Image.BILINEAR)) for img_file in self.img_files]
 
@@ -313,7 +312,7 @@ class NoLabelDataset (Dataset):
                 img, id = r
                 if '_' in img:
                     images.append(f"{self.data_dir}{img}.png")
-        print(images)
+        # print(images)
         return images
     def __len__(self):
         return len(self.img_files)

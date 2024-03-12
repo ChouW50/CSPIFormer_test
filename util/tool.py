@@ -12,7 +12,7 @@ from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from pytorch_grad_cam import GradCAM
 from datetime import datetime
-from PIL import Image
+from PIL import Image, ImageDraw
 from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -32,7 +32,7 @@ def CreateNewFile(last_path):
 
 def check_dataset(path, size, split, transform, ImageLabel, **kwargs):
     if ImageLabel == 0:
-        return TxtLabelDataset(path, size, split, transform, **kwargs)
+        return TxtLabelDataset(path, size, split, transform,**kwargs)
     elif ImageLabel == 1:
         return ImageLbDataset(path, split, transform, size[0], size[1], **kwargs)
     elif ImageLabel == 3: 
@@ -573,7 +573,7 @@ def test_(model, dataloader):
     print(f"mean used time: {mean_time}s")
     print(f"mean fps: {mean_fps * 1000}")
     return y_pred
-
+# Grad CAM
 def img_set(path, size):
     img = cv2.imread(path)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -584,33 +584,179 @@ def img_set(path, size):
     return img_tens, img_
 
 def reshape_transform(tensor, H = 8, W = 8):
-    print(tensor.shape)
+    # print(tensor.shape)
     # result = tensor.reshape(tensor.size(0), H, W, tensor.size(1))
     result = tensor.reshape(tensor.size(0), H, W, tensor.size(3))
-    print(result.shape)
+    # print(result.shape)
 
     # Bring the channels to the first dimension,
     # like in CNNs.
     result = result.transpose(2, 3).transpose(1, 2)
     return result
 
-def att_map(model, size, class_num, att_stage = [4], in_path = '', out_path = '', img_name = ''):
+def att_map(model, size, class_num, att_stage = [4], in_path = '', out_path = '', img_name = [], dataset_name = ''):
     input_tensor, img = img_set(in_path, size)
     input_tensor = input_tensor.to(device)
     layer_ = []
     if 1 in att_stage:
-        layer_.append(model.encoder.block1[-1])
+        layer_.append(model.encoder.blocks1.dense[-1])
     elif 2 in att_stage:
-        layer_.append(model.encoder.block2[-1])
+        layer_.append(model.encoder.blocks2.dense[-1])
     elif 3 in att_stage:
-        layer_.append(model.encoder.block3[-1])
+        layer_.append(model.encoder.blocks3.dense[-1])
     elif 4 in att_stage:
-        layer_.append(model.encoder.block4[-1])
+        layer_.append(model.encoder.blocks4.dense[-1])
     cam = GradCAM(model = model, target_layers = layer_, use_cuda = True, reshape_transform = reshape_transform)
     targets = [ClassifierOutputTarget(class_num - 1)]
     grayscale_cam = cam(input_tensor = input_tensor, targets = targets)
     grayscale_cam = grayscale_cam[0, :]
     visualization = show_cam_on_image(img = img, mask = grayscale_cam)
+    CreateNF(f"{out_path}GradCAM_stage{att_stage}_{dataset_name}\\")
+    # print("done")
+    CreateNF(f"{out_path}GradCAM_stage{att_stage}_{dataset_name}\\{img_name[0]}\\")
+    # print("done")
+    cv2.imwrite(f"{out_path}GradCAM_stage{att_stage}_{dataset_name}\\{img_name[0]}\\{img_name[1]}", visualization)
+
+# Self-attention map
+from PIL import Image, ImageDraw
+def grid_show(to_shows, cols, img_name, layer, path):
+    rows = (len(to_shows)) // cols
+    # print(f"rows: {rows}, cols: {cols}")
+    it = iter(to_shows)
+    fig, axs = plt.subplots(rows, cols, figsize=(5*cols, 5*rows))
+    fig.suptitle(f'=== image #{img_name} ··· layer #{layer} ===')
+    if rows == 1 and cols == 1:
+        axs = [axs]
+    elif rows == 1 or cols == 1:
+        axs = axs.flatten()  # Make axs a flat list for single row or single column
+    else:
+        axs = axs.reshape(-1)  # Make axs a flat list for multiple rows and columns
+
+    for ax, to_show in zip(axs, to_shows):
+        image, title = to_show
+        im = ax.imshow(image)
+        ax.set_title(title)
+        ax.set_yticks([])
+        ax.set_xticks([])
+        # Create colorbar for the current axis
+        fig.colorbar(im, ax=ax)
     
-    cv2.imwrite(f"{out_path}{img_name}", visualization)
+    # Adjust layout
+    plt.tight_layout()
+    plt.show()
+    # for i in range(rows):
+    #     for j in range(cols):
+    #         image, title = next(it)
+    #         axs[i, j].imshow(image)
+    #         axs[i, j].set_title(title)
+    #         axs[i, j].set_yticks([])
+    #         axs[i, j].set_xticks([])
+    # plt.show()
+    fig.savefig(f'{path}{img_name[:-4]}_layer{layer}_heads.png', bbox_inches = 'tight',)
+def visualize_head(att_map):
+    ax = plt.gca()
+    # Plot the heatmap
+    im = ax.imshow(att_map)
+    # Create colorbar
+    cbar = ax.figure.colorbar(im, ax=ax)
+    plt.show()
+def visualize_heads(att_map, img_name, layer, path):
+    to_shows, mean = [], True
+    # print(att_map.shape)
+    if att_map.shape[1] == 1:
+        mean = False
+        att_map = att_map.reshape(1, att_map.shape[2], att_map.shape[3])
+        cols = 1
+    else: att_map = att_map.squeeze()
+    for i in range(att_map.shape[0]):
+        to_shows.append((att_map[i], f'Head {i+1}'))
+    if mean:
+        average_att_map = att_map.mean(axis=0)
+        to_shows.append((average_att_map, 'Head Average'))
+        cols = int(len(to_shows) / 2)
     
+    grid_show(to_shows, cols=cols, img_name = img_name, layer = layer, path = path)
+    
+def cls_padding(image, mask, cls_weight, grid_size):
+    if not isinstance(grid_size, tuple):
+        grid_size = (grid_size, grid_size)
+        
+    image = np.array(image)
+
+    H, W = image.shape[:2]
+    delta_H = int(H/grid_size[0])
+    delta_W = int(W/grid_size[1])
+    padding_w = delta_W
+    padding_h = H
+    padding = np.ones_like(image) * 255
+    padding = padding[:padding_h, :padding_w]
+    
+    padded_image = np.hstack((padding,image))
+    padded_image = Image.fromarray(padded_image)
+    # draw = ImageDraw.Draw(padded_image)
+    # draw.text((int(delta_W/4),int(delta_H/4)),'CLS', fill=(0,0,0)) # PIL.Image.size = (W,H) not (H,W)
+
+    mask = mask / max(np.max(mask),cls_weight)
+    cls_weight = cls_weight / max(np.max(mask),cls_weight)
+    
+    if len(padding.shape) == 3:
+        padding = padding[:,:,0]
+        padding[:,:] = np.min(mask)
+    mask_to_pad = np.ones((1,1)) * cls_weight
+    mask_to_pad = Image.fromarray(mask_to_pad)
+    mask_to_pad = mask_to_pad.resize((delta_W, delta_H))
+    mask_to_pad = np.array(mask_to_pad)
+
+    padding[:delta_H,  :delta_W] = mask_to_pad
+    padded_mask = np.hstack((padding, mask))
+    padded_mask = padded_mask
+    
+    meta_mask = np.zeros((padded_mask.shape[0], padded_mask.shape[1],4))
+    meta_mask[delta_H:,0: delta_W, :] = 1 
+    
+    return padded_image, padded_mask, meta_mask
+
+def visualize_grid_to_grid(att_map, grid_index, head_num, image, img_name, path, ly, grid_size=32, alpha=0.6):
+    if not isinstance(grid_size, tuple):
+        grid_size = (grid_size, grid_size)
+    
+    H,W = att_map.shape
+    # print(f"att_map: {att_map.shape}")
+    with_cls_token = False
+      
+    grid_image = highlight_grid(image, [grid_index], grid_size)
+    print(f"att_map: {att_map[grid_index].shape}")
+    mask = att_map[grid_index].reshape(grid_size[0], grid_size[1])
+    mask = Image.fromarray(mask).resize((image.size))
+    
+    fig, ax = plt.subplots(1, 2, figsize=(8, 4))
+    fig.suptitle(f'image #{img_name} head #{head_num} grid {grid_index} attention map')
+    fig.tight_layout(h_pad = 2)
+    ax[0].imshow(grid_image, cmap='gray')
+    ax[0].axis('off')
+    
+    ax[1].imshow(grid_image, cmap='gray')
+    ax[1].imshow(mask/np.max(mask), alpha=alpha, cmap='rainbow')
+    ax[1].axis('off')
+    plt.show()
+    # save the image
+    fig.savefig(f'{path}grid2grid{img_name[:-4]}_layer{ly}_{head_num}_{grid_index}.png', bbox_inches = 'tight',)
+# check grid_size
+def highlight_grid(image, grid_indexes, grid_size=32):
+    if not isinstance(grid_size, tuple):
+        grid_size = (grid_size, grid_size)
+    # print(image.size)
+    W, H = image.size
+    h = H / grid_size[0]
+    w = W / grid_size[1]
+    image = image.copy()
+    for grid_index in grid_indexes:
+        x, y = np.unravel_index(grid_index, (grid_size[0], grid_size[1]))
+        a= ImageDraw.ImageDraw(image)
+        # a = image
+        a.rectangle([(y*w,x*h),(y*w+w,x*h+h)],fill =None,outline ='red',width =2)
+    return image
+def SelfAttn_ (model, img_path, img_name, ):
+    for lyr in range(18, 36):
+        visualize_heads(attention_maps_2[lyr], img_name, lyr, test_path)
+        clear_output(wait = True)
