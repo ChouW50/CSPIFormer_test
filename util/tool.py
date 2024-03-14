@@ -10,6 +10,7 @@ from .dataset import ImageLbDataset, TxtLabelDataset, NoLabelDataset, ImageLabel
 from sklearn.metrics import confusion_matrix, classification_report
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
+from IPython.display import clear_output
 from pytorch_grad_cam import GradCAM
 from datetime import datetime
 from PIL import Image, ImageDraw
@@ -612,19 +613,49 @@ def att_map(model, size, class_num, att_stage = [4], in_path = '', out_path = ''
     grayscale_cam = grayscale_cam[0, :]
     visualization = show_cam_on_image(img = img, mask = grayscale_cam)
     CreateNF(f"{out_path}GradCAM_stage{att_stage}_{dataset_name}\\")
-    # print("done")
     CreateNF(f"{out_path}GradCAM_stage{att_stage}_{dataset_name}\\{img_name[0]}\\")
-    # print("done")
     cv2.imwrite(f"{out_path}GradCAM_stage{att_stage}_{dataset_name}\\{img_name[0]}\\{img_name[1]}", visualization)
 
 # Self-attention map
-from PIL import Image, ImageDraw
-def grid_show(to_shows, cols, img_name, layer, path):
+def save_fig_(attn, path, name_path, size):
+    # fig_s = 8
+    # dpi = int(size[0] / fig_s)
+    # fig = plt.figure(figsize = (fig_s, fig_s), dpi = dpi)
+    # plt.imshow(attn)
+    # plt.axis('off')
+    # plt.savefig(path, pad_inches=0, dpi = dpi)
+    # plt.show()
+    dpi = 100
+    figsize = (size[0] / dpi, size[1] / dpi)
+    tem_path = f"{path}_tem.jpg"
+    fig = plt.figure(figsize = figsize, dpi = dpi)
+    plt.imshow(attn)
+    plt.axis('off')
+    # Temporarily save to a buffer
+    plt.savefig(tem_path, bbox_inches='tight', pad_inches = 0, dpi = dpi)
+    # plt.savefig(tem_path, dpi = dpi)
+    plt.close(fig)  # Close the figure to free memory
+
+    # Open the image and remove white edges
+    img = Image.open(tem_path)
+    img = img.crop(img.getbbox())  # This removes the border using PIL
+    
+    # Resize back to desired output size if necessary
+    img = img.resize(size, Image.ANTIALIAS)
+    save_path = f"{path}{name_path}"
+    img.save(save_path)
+def grid_show(to_shows, cols: int, img_name: list, layer, path: str, stage_nm: str = '', dataset_name: str = '', size = (64, 64)):
+    '''
+        to_shows: list, the list of images to show
+        cols: int, the number of columns
+        img_name: list, the name of the image
+        path: str, the path to save the image
+    '''
     rows = (len(to_shows)) // cols
     # print(f"rows: {rows}, cols: {cols}")
     it = iter(to_shows)
     fig, axs = plt.subplots(rows, cols, figsize=(5*cols, 5*rows))
-    fig.suptitle(f'=== image #{img_name} ··· layer #{layer} ===')
+    fig.suptitle(f'=== image #{img_name[:]} ··· layer #{layer} ===')
     if rows == 1 and cols == 1:
         axs = [axs]
     elif rows == 1 or cols == 1:
@@ -640,19 +671,17 @@ def grid_show(to_shows, cols, img_name, layer, path):
         ax.set_xticks([])
         # Create colorbar for the current axis
         fig.colorbar(im, ax=ax)
-    
+    final_image = image
     # Adjust layout
     plt.tight_layout()
     plt.show()
-    # for i in range(rows):
-    #     for j in range(cols):
-    #         image, title = next(it)
-    #         axs[i, j].imshow(image)
-    #         axs[i, j].set_title(title)
-    #         axs[i, j].set_yticks([])
-    #         axs[i, j].set_xticks([])
-    # plt.show()
-    fig.savefig(f'{path}{img_name[:-4]}_layer{layer}_heads.png', bbox_inches = 'tight',)
+    # fig.savefig(f'{path}{img_name[:-4]}_layer{layer}_heads.png', bbox_inches = 'tight',)
+    
+    CreateNF(f"{path}SelfAttn_stage{stage_nm}_{dataset_name}\\")
+    CreateNF(f"{path}SelfAttn_stage{stage_nm}_{dataset_name}\\{img_name[0]}\\")
+    CreateNF(f"{path}SelfAttn_stage{stage_nm}_{dataset_name}\\{img_name[0]}\\{img_name[1][:-4]}\\")
+    save_fig_(final_image, f"{path}SelfAttn_stage{stage_nm}_{dataset_name}\\", f"{img_name[0]}\\{img_name[1][:-4]}\\{layer}-{img_name[1]}", size)
+    # cv2.imwrite(f"{path}SelfAttn_stage{stage_nm}_{dataset_name}\\{img_name[0]}\\{layer}-{img_name[1]}", final_image)
 def visualize_head(att_map):
     ax = plt.gca()
     # Plot the heatmap
@@ -660,9 +689,10 @@ def visualize_head(att_map):
     # Create colorbar
     cbar = ax.figure.colorbar(im, ax=ax)
     plt.show()
-def visualize_heads(att_map, img_name, layer, path):
+def visualize_heads(att_map, img_name, layer, path, stage_nm = '', dataset_name = ''):
     to_shows, mean = [], True
     # print(att_map.shape)
+    size = (att_map.shape[2], att_map.shape[3])
     if att_map.shape[1] == 1:
         mean = False
         att_map = att_map.reshape(1, att_map.shape[2], att_map.shape[3])
@@ -675,7 +705,7 @@ def visualize_heads(att_map, img_name, layer, path):
         to_shows.append((average_att_map, 'Head Average'))
         cols = int(len(to_shows) / 2)
     
-    grid_show(to_shows, cols=cols, img_name = img_name, layer = layer, path = path)
+    grid_show(to_shows, cols=cols, img_name = img_name, layer = layer, path = path, stage_nm = stage_nm, dataset_name = dataset_name, size = size)
     
 def cls_padding(image, mask, cls_weight, grid_size):
     if not isinstance(grid_size, tuple):
@@ -740,7 +770,7 @@ def visualize_grid_to_grid(att_map, grid_index, head_num, image, img_name, path,
     ax[1].axis('off')
     plt.show()
     # save the image
-    fig.savefig(f'{path}grid2grid{img_name[:-4]}_layer{ly}_{head_num}_{grid_index}.png', bbox_inches = 'tight',)
+    # fig.savefig(f'{path}grid2grid{img_name[:-4]}_layer{ly}_{head_num}_{grid_index}.png', bbox_inches = 'tight',)
 # check grid_size
 def highlight_grid(image, grid_indexes, grid_size=32):
     if not isinstance(grid_size, tuple):
@@ -756,7 +786,11 @@ def highlight_grid(image, grid_indexes, grid_size=32):
         # a = image
         a.rectangle([(y*w,x*h),(y*w+w,x*h+h)],fill =None,outline ='red',width =2)
     return image
-def SelfAttn_ (model, img_path, img_name, ):
-    for lyr in range(18, 36):
-        visualize_heads(attention_maps_2[lyr], img_name, lyr, test_path)
-        clear_output(wait = True)
+def SelfAttn_(attention_maps, stage_num, output_path, img_name, num_img, each_layer = 18, dataset_name = ''):
+    # num_img = 0 ->range(0-18), 1 -> range(18-36), 2 -> range(36-54)
+    if 1 and 2 and 3 and 4 in stage_num:
+        stage_nm = 'all_ST'
+        st, ed = num_img * each_layer, (num_img + 1) * each_layer
+        for lyr in range(st, ed):
+            visualize_heads(attention_maps[lyr], img_name, lyr, output_path, stage_nm, dataset_name)
+            clear_output(wait = True)

@@ -189,7 +189,7 @@ class ImageLabelDataset(Dataset):
         return label
 # ImageLabel = 0 Classification
 class TxtLabelDataset(Dataset):
-    def __init__(self, data_dir, size, split = 'train', transform = None, classnum = None, ratio_train = None, ratio_val = None):
+    def __init__(self, data_dir, size, split = 'train', transform = None, classnum = None, ratio_train = None, ratio_val = None, ratio_train_ = None):
         super().__init__()
         self.size = size
         if ratio_train is None or ratio_val is None:
@@ -209,9 +209,10 @@ class TxtLabelDataset(Dataset):
             self.name2label[name] = len(self.name2label.keys())
         CreateNF(f"{data_dir}cls_{classnum}\\")
         self.img_files, self.label_files = self.load_csv(f"{data_dir}cls_{classnum}\\{file_name}_{data_csv}.csv")
+        print(f"{int(ratio_train_ * len(self.img_files))}to{int(ratio_train * len(self.img_files))}")
         if split == 'train':
-            self.img_files = self.img_files[:int(ratio_train * len(self.img_files))]
-            self.label_files = self.label_files[:int(ratio_train * len(self.label_files))]
+            self.img_files = self.img_files[int(ratio_train_ * len(self.img_files)):int(ratio_train * len(self.img_files))]
+            self.label_files = self.label_files[int(ratio_train_ * len(self.img_files)):int(ratio_train * len(self.label_files))]
         elif split == 'val':
             self.img_files = self.img_files[int(ratio_train * len(self.img_files)):int((ratio_train + ratio_val) * len(self.img_files))]
             self.label_files = self.label_files[int(ratio_train * len(self.label_files)):int((ratio_train + ratio_val) * len(self.label_files))]
@@ -223,7 +224,7 @@ class TxtLabelDataset(Dataset):
             self.label_files = self.label_files[:]
         self.Image = [np.array(Image.open(img_file).convert('RGB').resize(
             (self.size[1], self.size[0]), Image.BILINEAR)) for img_file in self.img_files]
-
+        print(f"path: {self.img_files[0]}, {self.img_files[len(self.img_files) - 1]}")
     def load_csv(self, filename):
         if not os.path.exists(filename):
             images = []
@@ -252,6 +253,7 @@ class TxtLabelDataset(Dataset):
     def __len__(self):
         return len(self.img_files)
     def __getitem__(self, idx):
+        # print(f"img_files: {self.img_files[idx]}")
         img, label = self.img_files[idx], self.label_files[idx]
         # For albumentations
         # img, label = self.Image[idx], self.label_files[idx]
