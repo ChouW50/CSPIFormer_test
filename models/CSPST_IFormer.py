@@ -576,7 +576,7 @@ class TwoPart_(nn.Module):
         self.dense = dense(self.part1_chnls, num_heads, mlp_ratio, qkv_bias, drop_rate, attn_drop_rate, dpr, norm_layer, 
                             act_layer, attention_heads, pool_size, use_layer_scale, layer_scale_init_value, 
                             idx1, idx2, win_sizes, split_sizes, res = res)
-        self.n_CS = Fusion_CS(channel = self.part1_chnls + self.part2_chnls, sp = 4)
+        self.ST_f_CS = Fusion_CS(channel = self.part1_chnls + self.part2_chnls, sp = 4)
     def forward(self, x):
         part1 = x[:, :, :, :self.part1_chnls]
         part2 = x[:, :, :, self.part1_chnls:]
@@ -585,7 +585,7 @@ class TwoPart_(nn.Module):
         part1 = part1.permute(0, 3, 1, 2)
         x = torch.cat([part1, part2], dim = 1)
         # ===N_CS start===
-        # x = self.n_CS(x)
+        # x = self.ST_f_CS(x)
         # ===N_CS end===
         # ---channel shuffle start---
         x = shuffle_chnls(x, 8)
