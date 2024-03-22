@@ -13,8 +13,9 @@ class CSPIformer2BiFPN(nn.Module):
         self.ImageLabel = ImageLabel
         self.encoder = iformer_small(size = size, num_classes = 0, win_sizes = win_sizes, split_sizes = split_sizes)
         if ImageLabel == 1 or ImageLabel == 3:
-            self.decoder = BiFPNDecoder(encoder_channels = encoder_channels)
-            self.seghead = SegmentationHead(128, num_classes, activation='softmax2d')
+            self.decoder = BiFPNDecoder(encoder_channels = encoder_channels, merge_policy = "cat")
+            self.seghead = SegmentationHead(128*4, num_classes, activation='softmax2d')
+            # self.seghead = SegmentationHead(128, num_classes, activation='softmax2d')
         elif ImageLabel == 0 or ImageLabel == 2:
             self.seghead = ClassificationHead(encoder_channels[3], num_classes)
     def forward(self, features):
