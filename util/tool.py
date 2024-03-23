@@ -11,6 +11,7 @@ from sklearn.metrics import confusion_matrix, classification_report
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
 from IPython.display import clear_output
+from skimage.measure import block_reduce
 from pytorch_grad_cam import GradCAM
 from datetime import datetime
 from PIL import Image, ImageDraw
@@ -361,15 +362,17 @@ def train(train_loader, model, optimizer, epoch_i, epoch_total, scheduler, Image
 
     return images[0], labels[0], preds[0], (loss_list)
 
-def validate(val_loader, model, epoch_i, epoch_total, num_class):
-
+def validate(val_loader, model, epoch_i, epoch_total, num_class, per:bool = False):
+    '''
+        per: bool, if True, print the result of score in separate classes, else print the average score of all classes
+    '''
     val_loop = tqdm(enumerate(val_loader), total = len(val_loader))
 
     # tldr: to make layers behave differently during inference (vs training)
     model.eval()
 
     # enable calculation of confusion matrix for n_classes = 19
-    running_metrics_val = runningScore(n_classes = num_class, per = False)
+    running_metrics_val = runningScore(n_classes = num_class, per = per)
     # empty list to add Accuracy and Jaccard Score Calculations
     acc_sh = []
     js_sh = []
@@ -410,8 +413,11 @@ def validate(val_loader, model, epoch_i, epoch_total, num_class):
 
     return val_images[0], val_labels[0], preds[0], (score)
 
-def test(test_loader, model, path, num_class, input_path, img_size):
-    F1_total = 0
+def test(test_loader, model, path, num_class, input_path, img_size, per:bool = True):
+    '''
+        per: bool, if True, print the result of score in separate classes, else print the average score of all classes
+    '''
+    F1_total, Pixel_Accuracy_total, MIoU_total = 0, 0, 0
 
     test_loop = tqdm(enumerate(test_loader), total = len(test_loader))
 
@@ -419,7 +425,7 @@ def test(test_loader, model, path, num_class, input_path, img_size):
     model.eval()
 
     # enable calculation of confusion matrix for n_classes = 19
-    running_metrics_val = runningScore(n_classes = num_class, per = True)
+    running_metrics_val = runningScore(n_classes = num_class, per = per)
     
     # empty list to add Accuracy and Jaccard Score Calculations
     acc_sh = []
@@ -457,6 +463,8 @@ def test(test_loader, model, path, num_class, input_path, img_size):
             print(f"Totally cost: {time_end - time_start}")
             score = running_metrics_val.get_scores()
             F1_total += score["F1"]
+            Pixel_Accuracy_total += score["Pixel_Accuracy"]
+            MIoU_total += score["MIoU"]
             print(score)
             
             running_metrics_val.reset()
@@ -469,7 +477,7 @@ def test(test_loader, model, path, num_class, input_path, img_size):
     js_s = sum(js_sh)/len(js_sh)
     score["acc"] = acc_s
     score["js"] = js_s
-    print("F1_total:", F1_total/len(test_loader))
+    print(f"F1_total: {F1_total/len(test_loader)}, mPA: {Pixel_Accuracy_total/len(test_loader)}, total MIoU: {MIoU_total/len(test_loader)}")
 
     return print(f"fin: {score}")
 
@@ -586,6 +594,7 @@ def img_set(path, size):
 
 def reshape_transform(tensor, H = 8, W = 8):
     # print(tensor.shape)
+    _, H, W, _ = tensor.shape
     # result = tensor.reshape(tensor.size(0), H, W, tensor.size(1))
     result = tensor.reshape(tensor.size(0), H, W, tensor.size(3))
     # print(result.shape)
@@ -599,6 +608,9 @@ def att_map(model, size, class_num, att_stage = [4], in_path = '', out_path = ''
     input_tensor, img = img_set(in_path, size)
     input_tensor = input_tensor.to(device)
     layer_ = []
+    # print(model.encoder.blocks4.abc)
+    # layer_.append(model.encoder.blocks4.)
+    # print(len(layer_))
     if 1 in att_stage:
         layer_.append(model.encoder.blocks1.dense[-1])
     elif 2 in att_stage:
@@ -638,7 +650,7 @@ def save_fig_(attn, path, name_path, size):
 
     # Open the image and remove white edges
     img = Image.open(tem_path)
-    img = img.crop(img.getbbox())  # This removes the border using PIL
+    # img = img.crop(img.getbbox())  # This removes the border using PIL
     
     # Resize back to desired output size if necessary
     img = img.resize(size, Image.ANTIALIAS)
@@ -794,3 +806,22 @@ def SelfAttn_(attention_maps, stage_num, output_path, img_name, num_img, each_la
         for lyr in range(st, ed):
             visualize_heads(attention_maps[lyr], img_name, lyr, output_path, stage_nm, dataset_name)
             clear_output(wait = True)
+def avg_SelfAttn_ST(path, layer_start, layer_num, stage_num, dataset_num):
+    att = []
+    for _ in range(layer_num):
+        total_path = os.listdir(f"{path}")
+        sm_stage = total_path[layer_start:layer_num]
+    print(sm_stage)
+    end_ = sm_stage[0].split('.')[-1]
+    print(end_)
+    # H, W, C = att[n].shape
+    for num in range(layer_num):
+        att.append(np.array(Image.open(f"{path}{sm_stage[num]}").convert('RGB')))
+    # att.append(np.array(Image.open(f"{path}{sm_stage[num]}").convert('RGB')) for num in range(layer_num))
+    # print(att[0].shape)
+    final_att = np.mean(np.stack(att), axis = 0)
+    CreateNF(f"{path}stage_\\")
+    # print(f"{path}stage_\\st_{stage_num}_{dataset_num}{end_}")
+    cv2.imwrite(f"{path}stage_\\st_{stage_num}_{dataset_num}.{end_}", final_att.astype(np.uint8))
+# def Fus_Attn():
+    
